@@ -1166,7 +1166,7 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             dependencySettings: DependencySettings(cbc.scope)
         )
 
-        if (taskDependencySettings.dependencySettings.verification) {
+        if taskDependencySettings.dependencySettings.verification {
             commandLine += [
                 "-Xclang",
                 "-header-include-file",
