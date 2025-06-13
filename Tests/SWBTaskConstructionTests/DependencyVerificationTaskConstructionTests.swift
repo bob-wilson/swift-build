@@ -32,7 +32,7 @@ fileprivate struct DependencyVerificationTaskConstructionTests: CoreBasedTests {
     @Test(.requireSDKs(.macOS))
     func addsTraceArgsWhenDependenciesDeclared() async throws {
         try await testWith(["DEPENDENCIES": "Foo"]) { tester, srcroot in
-            await tester.checkBuild(runDestination: .macOS) { results in
+            await tester.checkBuild(runDestination: .macOS, fs: localFS) { results in
                 results.checkTask(.matchRuleType("Ld")) { task in
                     task.checkCommandLineContains([
                         "-Xlinker", "-trace_file",
@@ -52,9 +52,9 @@ fileprivate struct DependencyVerificationTaskConstructionTests: CoreBasedTests {
     }
 
     @Test(.requireSDKs(.macOS))
-    func noTraceArgsWhenDependenciesDeclared() async throws {
+    func noTraceArgsWhenDependenciesNotDeclared() async throws {
         try await testWith([:]) { tester, srcroot in
-            await tester.checkBuild(runDestination: .macOS) { results in
+            await tester.checkBuild(runDestination: .macOS, fs: localFS) { results in
                 results.checkTask(.matchRuleType("Ld")) { task in
                     task.checkCommandLineDoesNotContain("-trace_file")
                 }
@@ -68,7 +68,7 @@ fileprivate struct DependencyVerificationTaskConstructionTests: CoreBasedTests {
     @Test(.requireSDKs(.macOS))
     func canEnableVerificationOfNoDependencies() async throws {
         try await testWith(["DEPENDENCIES_VERIFICATION": "YES"]) { tester, srcroot in
-            await tester.checkBuild(runDestination: .macOS) { results in
+            await tester.checkBuild(runDestination: .macOS, fs: localFS) { results in
                 results.checkTask(.matchRuleType("Ld")) { task in
                     task.checkCommandLineContains(["-Xlinker", "-trace_file",])
                 }

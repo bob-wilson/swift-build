@@ -701,7 +701,8 @@ public final class LdLinkerSpec : GenericLinkerSpec, SpecIdentifierType, @unchec
             nil
         }
 
-        if let taskDependencySettings = taskDependencySettings {
+        if let taskDependencySettings = taskDependencySettings,
+           taskDependencySettings.dependencySettings.verification {
             commandLine += [
                 "-Xlinker",
                 "-trace_file",
