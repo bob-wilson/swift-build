@@ -43,7 +43,7 @@ fileprivate struct DependencyVerificationTaskConstructionTests: CoreBasedTests {
                     task.checkCommandLineContains([
                         "-Xclang", "-header-include-file",
                         "-Xclang", outputFile(srcroot, "\(sourceBaseName).o.trace.json"),
-                        "-Xclang", "-header-include-filtering=only-direct-system",
+                        "-Xclang", "-header-include-filtering=direct-per-file",
                         "-Xclang", "-header-include-format=json",
                     ])
                 }

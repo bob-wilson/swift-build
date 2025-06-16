@@ -1173,7 +1173,7 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
                 "-Xclang",
                 taskDependencySettings.traceFile.str,
                 "-Xclang",
-                "-header-include-filtering=only-direct-system",
+                "-header-include-filtering=direct-per-file",
                 "-Xclang",
                 "-header-include-format=json"
             ]

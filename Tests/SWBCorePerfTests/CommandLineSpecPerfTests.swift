@@ -109,7 +109,7 @@ extension CapturingTaskGenerationDelegate: TaskActionCreationDelegate {
     func createLdTaskAction() -> any SWBCore.PlannedTaskAction {
         return LdTaskAction()
     }
-    
+
     public func createAuxiliaryFileTaskAction(_ context: AuxiliaryFileTaskActionContext) -> any PlannedTaskAction {
         return AuxiliaryFileTaskAction(context)
     }

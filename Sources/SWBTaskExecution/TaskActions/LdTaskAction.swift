@@ -84,6 +84,5 @@ public final class LdTaskAction: TaskAction {
             case delayInit = "delay-init"
             case archives = "archives"
         }
-        
     }
 }

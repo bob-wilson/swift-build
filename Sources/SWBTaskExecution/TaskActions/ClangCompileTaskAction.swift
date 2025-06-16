@@ -458,42 +458,26 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
     }
 
     private struct ClangAdapter: TaskDependencyVerification.Adapter {
-        typealias T = TraceData
-
-        let outerTraceFileEnvVar = "CC_PRINT_HEADERS_FILE"
+        typealias T = Array<TraceData>
 
         func exec(ctx: TaskExecutionContext, env: [String : String]) async throws -> CommandResult {
-            var env = env
-            if let format = env.removeValue(forKey: "CC_PRINT_HEADERS_FORMAT") {
-                if format != "json" {
-                    throw StubError.error("Incompatible 'CC_PRINT_HEADERS_FORMAT' environment variable value '\(format)'. Only 'json' is supported.")
-                }
-            }
-
-            if let filtering = env.removeValue(forKey: "CC_PRINT_HEADERS_FILTERING") {
-                if filtering != "only-direct-system" {
-                    throw StubError.error("Incompatible 'CC_PRINT_HEADERS_FILTERING' environment variable value '\(filtering)'. Only 'only-direct-system' is supported.")
-                }
-            }
-
             return try await spawn(ctx: ctx, env: env)
         }
 
         func verify(
             ctx: TaskExecutionContext,
-            traceData: ClangNonModularCompileTaskAction.TraceData,
+            traceData: Array<ClangNonModularCompileTaskAction.TraceData>,
             dependencySettings: DependencySettings
         ) throws -> Bool {
-            return try verifyFiles(
-                ctx: ctx,
-                files: traceData.includes ?? [],
-                dependencySettings: dependencySettings
-            )
+            var allFiles = Set<Path>()
+            traceData.forEach { allFiles.formUnion(Set($0.includes)) }
+            return try verifyFiles(ctx: ctx, files: allFiles, dependencySettings: dependencySettings)
         }
     }
 
     private struct TraceData: Decodable {
-        let includes: [Path]?
+        let source: Path
+        let includes: [Path]
     }
 
 }
