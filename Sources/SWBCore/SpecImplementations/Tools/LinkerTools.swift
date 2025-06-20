@@ -160,7 +160,6 @@ public struct DiscoveredLdLinkerToolSpecInfo: DiscoveredCommandLineToolSpecInfo 
         #else
         return false
         #endif
-
     }
 }
 

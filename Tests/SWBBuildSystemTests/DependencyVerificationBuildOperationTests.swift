@@ -83,14 +83,16 @@ fileprivate struct DependencyVerificationBuildOperationTests: CoreBasedTests {
                 )
             }
 
-            // Non-modular clang complains about undeclared dependency
-            try await tester.checkBuild(parameters: parameters(), runDestination: .macOS, persistent: true) { results in
-                results.checkError(.contains("Undeclared dependencies: \n  Accelerate"))
-            }
+            if try await clangFeatures.has(.printHeadersDirectPerFile) {
+                // Non-modular clang complains about undeclared dependency
+                try await tester.checkBuild(parameters: parameters(), runDestination: .macOS, persistent: true) { results in
+                    results.checkError(.contains("Undeclared dependencies: \n  Accelerate"))
+                }
 
-            // Declaring dependency resolves problem
-            try await tester.checkBuild(parameters: parameters(["DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
-                results.checkNoErrors()
+                // Declaring dependency resolves problem
+                try await tester.checkBuild(parameters: parameters(["DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
+                    results.checkNoErrors()
+                }
             }
 
             // Linker complains about undeclared dependency

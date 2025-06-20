@@ -81,7 +81,6 @@ public struct TaskDependencySettings: Serializable, Sendable, Encodable {
     func signatureData() -> String {
         return "verify:\(dependencySettings.verification),deps:\(dependencySettings.dependencies.joined(separator: ":"))"
     }
-
 }
 
 // Protocol for task payloads

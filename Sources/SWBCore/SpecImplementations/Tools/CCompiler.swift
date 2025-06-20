@@ -1161,22 +1161,27 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             dependencyData = nil
         }
 
-        let taskDependencySettings = TaskDependencySettings(
-            traceFile: Path(outputNode.path.str + ".trace.json"),
-            dependencySettings: DependencySettings(cbc.scope)
-        )
-
-        if taskDependencySettings.dependencySettings.verification {
-            commandLine += [
-                "-Xclang",
-                "-header-include-file",
-                "-Xclang",
-                taskDependencySettings.traceFile.str,
-                "-Xclang",
-                "-header-include-filtering=direct-per-file",
-                "-Xclang",
-                "-header-include-format=json"
-            ]
+        let taskDependencySettings: TaskDependencySettings?
+        if clangInfo?.hasFeature("print-headers-direct-per-file") ?? false {
+            let depSettings = TaskDependencySettings(
+                traceFile: Path(outputNode.path.str + ".trace.json"),
+                dependencySettings: DependencySettings(cbc.scope)
+            )
+            if depSettings.dependencySettings.verification {
+                commandLine += [
+                    "-Xclang",
+                    "-header-include-file",
+                    "-Xclang",
+                    depSettings.traceFile.str,
+                    "-Xclang",
+                    "-header-include-filtering=direct-per-file",
+                    "-Xclang",
+                    "-header-include-format=json"
+                ]
+            }
+            taskDependencySettings = depSettings
+        } else {
+            taskDependencySettings = nil
         }
 
         // Add the diagnostics serialization flag.  We currently place the diagnostics file right next to the output object file.
@@ -1340,7 +1345,9 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             extraInputs = []
         }
 
-        additionalSignatureData += taskDependencySettings.signatureData()
+        if let taskDependencySettings {
+            additionalSignatureData += taskDependencySettings.signatureData()
+        }
 
         // Finally, create the task.
         delegate.createTask(type: self, dependencyData: dependencyData, payload: payload, ruleInfo: ruleInfo, additionalSignatureData: additionalSignatureData, commandLine: commandLine, additionalOutput: additionalOutput, environment: environmentBindings, workingDirectory: compilerWorkingDirectory(cbc), inputs: inputNodes + extraInputs, outputs: [outputNode], action: action ?? delegate.taskActionCreationDelegate.createClangNonModularCompileTaskAction(), execDescription: resolveExecutionDescription(cbc, delegate), enableSandboxing: enableSandboxing, additionalTaskOrderingOptions: [.compilationForIndexableSourceFile], usesExecutionInputs: usesExecutionInputs, showEnvironment: true, priority: .preferred)

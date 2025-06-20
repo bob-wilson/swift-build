@@ -113,5 +113,4 @@ fileprivate struct DependencyVerificationTaskConstructionTests: CoreBasedTests {
 
         try await assertions(tester, SRCROOT)
     }
-
 }

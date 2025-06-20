@@ -44,7 +44,5 @@ import SWBMacro
 
         let scope = MacroEvaluationScope(table: table)
         return DependencySettings(scope)
-
     }
-
 }
