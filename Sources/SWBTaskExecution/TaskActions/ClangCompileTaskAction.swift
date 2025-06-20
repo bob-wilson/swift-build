@@ -266,7 +266,7 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
                 let commandLine = command.arguments
                 let delegate = TaskProcessDelegate(outputDelegate: outputDelegate)
                 // The frontend invocations should be unaffected by the environment, pass an empty one.
-                try await TaskAction.spawn(commandLine: commandLine, environment: [:], workingDirectory: task.workingDirectory, dynamicExecutionDelegate: dynamicExecutionDelegate, clientDelegate: clientDelegate, processDelegate: delegate)
+                try await spawn(commandLine: commandLine, environment: [:], workingDirectory: task.workingDirectory, dynamicExecutionDelegate: dynamicExecutionDelegate, clientDelegate: clientDelegate, processDelegate: delegate)
                 lastResult = delegate.commandResult
 
                 if lastResult == .succeeded {
@@ -445,33 +445,57 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
         clientDelegate: any TaskExecutionClientDelegate,
         outputDelegate: any TaskOutputDelegate,
     ) async -> CommandResult {
-        return await TaskDependencyVerification.exec(
-            ctx: TaskExecutionContext(
-                task: task,
+        do {
+            // Check if verifying dependencies from trace data is enabled.
+            var taskDependencySettings: TaskDependencySettings? = nil
+            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
+                if depSettings.dependencySettings.verification {
+                    taskDependencySettings = depSettings
+
+                    // Remove the trace output file if it already exists.
+                    let traceFile = depSettings.traceFile
+                    if executionDelegate.fs.exists(traceFile) {
+                        try executionDelegate.fs.remove(traceFile)
+                    }
+                }
+            }
+
+            let processDelegate = TaskProcessDelegate(outputDelegate: outputDelegate)
+            try await spawn(
+                commandLine: Array(task.commandLineAsStrings),
+                environment: task.environment.bindingsDictionary,
+                workingDirectory: task.workingDirectory,
                 dynamicExecutionDelegate: dynamicExecutionDelegate,
-                executionDelegate: executionDelegate,
                 clientDelegate: clientDelegate,
-                outputDelegate: outputDelegate
-            ),
-            adapter: ClangAdapter()
-        )
-    }
+                processDelegate: processDelegate,
+            )
+            if let error = processDelegate.executionError {
+                outputDelegate.error(error)
+                return .failed
+            }
+            let execResult = processDelegate.commandResult ?? .failed
 
-    private struct ClangAdapter: TaskDependencyVerification.Adapter {
-        typealias T = Array<TraceData>
+            if let taskDependencySettings, execResult == .succeeded {
+                // Verify the dependencies from the trace data.
+                let traceFile = taskDependencySettings.traceFile
+                let fs = executionDelegate.fs
+                let traceData = try JSONDecoder().decode(Array<TraceData>.self, from: fs.readMemoryMapped(traceFile))
 
-        func exec(ctx: TaskExecutionContext, env: [String : String]) async throws -> CommandResult {
-            return try await spawn(ctx: ctx, env: env)
-        }
-
-        func verify(
-            ctx: TaskExecutionContext,
-            traceData: Array<ClangNonModularCompileTaskAction.TraceData>,
-            dependencySettings: DependencySettings
-        ) throws -> Bool {
-            var allFiles = Set<Path>()
-            traceData.forEach { allFiles.formUnion(Set($0.includes)) }
-            return try verifyFiles(ctx: ctx, files: allFiles, dependencySettings: dependencySettings)
+                var allFiles = Set<Path>()
+                traceData.forEach { allFiles.formUnion(Set($0.includes)) }
+                let verified = try TaskDependencyVerification.verifyFiles(
+                    files: allFiles,
+                    dependencySettings: taskDependencySettings.dependencySettings,
+                    outputDelegate: outputDelegate
+                )
+                if !verified {
+                    return .failed
+                }
+            }
+            return execResult
+        } catch {
+            outputDelegate.error(error.localizedDescription)
+            return .failed
         }
     }
 
@@ -479,5 +503,4 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
         let source: Path
         let includes: [Path]
     }
-
 }

@@ -15,6 +15,12 @@ import Foundation
 import SWBUtil
 
 public final class LdTaskAction: TaskAction {
+    private let outerTraceFileEnvVar = "LD_TRACE_FILE"
+    private static let inherentDependencies = [
+        "libSystem.B.tbd",
+        "libobjc.A.tbd",
+    ]
+
     public override class var toolIdentifier: String {
         return "ld"
     }
@@ -26,43 +32,74 @@ public final class LdTaskAction: TaskAction {
         clientDelegate: any TaskExecutionClientDelegate,
         outputDelegate: any TaskOutputDelegate,
     ) async -> CommandResult {
-        return await TaskDependencyVerification.exec(
-            ctx: TaskExecutionContext(
-                task: task,
+        do {
+            var env = task.environment.bindingsDictionary
+
+            // Check if verifying dependencies from trace data is enabled.
+            var taskDependencySettings: TaskDependencySettings? = nil
+            var outerTraceFile: Path? = nil
+            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
+                if depSettings.dependencySettings.verification {
+                    taskDependencySettings = depSettings
+
+                    // Remove the trace output file if it already exists.
+                    let traceFile = depSettings.traceFile
+                    if executionDelegate.fs.exists(traceFile) {
+                        try executionDelegate.fs.remove(traceFile)
+                    }
+
+                    // Check if the trace data needs to be merged to "LD_TRACE_FILE".
+                    outerTraceFile = env.removeValue(forKey: outerTraceFileEnvVar).map(Path.init)
+                }
+            }
+
+            let processDelegate = TaskProcessDelegate(outputDelegate: outputDelegate)
+            try await spawn(
+                commandLine: Array(task.commandLineAsStrings),
+                environment: env,
+                workingDirectory: task.workingDirectory,
                 dynamicExecutionDelegate: dynamicExecutionDelegate,
-                executionDelegate: executionDelegate,
                 clientDelegate: clientDelegate,
-                outputDelegate: outputDelegate
-            ),
-            adapter: LdAdapter()
-        )
-    }
-
-    private struct LdAdapter: TaskDependencyVerification.Adapter {
-        typealias T = TraceData
-
-        let outerTraceFileEnvVar = "LD_TRACE_FILE"
-
-        private static let inherentDependencies = [
-            "libSystem.B.tbd",
-            "libobjc.A.tbd",
-        ]
-
-        func verify(
-            ctx: TaskExecutionContext,
-            traceData: LdTaskAction.TraceData,
-            dependencySettings: DependencySettings
-        ) throws -> Bool {
-            return try verifyFiles(
-                ctx: ctx,
-                files: traceData.all().filter { !LdTaskAction.LdAdapter.inherentDependencies.contains($0.basename) },
-                dependencySettings: dependencySettings
+                processDelegate: processDelegate,
             )
+            if let error = processDelegate.executionError {
+                outputDelegate.error(error)
+                return .failed
+            }
+            let execResult = processDelegate.commandResult ?? .failed
+
+            if let taskDependencySettings, execResult == .succeeded {
+                // Verify the dependencies from the trace data.
+                let traceFile = taskDependencySettings.traceFile
+                let fs = executionDelegate.fs
+                let traceData: TraceData
+                if let outerTraceFile {
+                    // TODO: Is this file appending concurrent-targets safe?
+                    let traceFileContent = try fs.read(taskDependencySettings.traceFile)
+                    try fs.append(outerTraceFile, contents: traceFileContent)
+                    traceData = try JSONDecoder().decode(TraceData.self, from: Data(traceFileContent.bytes))
+                } else {
+                    // Fast path
+                    traceData = try JSONDecoder().decode(TraceData.self, from: fs.readMemoryMapped(traceFile))
+                }
+
+                let verified = try TaskDependencyVerification.verifyFiles(
+                    files: traceData.all().filter { !LdTaskAction.inherentDependencies.contains($0.basename) },
+                    dependencySettings: taskDependencySettings.dependencySettings,
+                    outputDelegate: outputDelegate
+                )
+                if !verified {
+                    return .failed
+                }
+            }
+            return execResult
+        } catch {
+            outputDelegate.error(error.localizedDescription)
+            return .failed
         }
     }
 
     private struct TraceData : Decodable {
-
         let dynamic: [Path]?
         let weak: [Path]?
         let reExports: [Path]?
