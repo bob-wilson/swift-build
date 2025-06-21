@@ -248,6 +248,20 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
                 casDBs = nil
             }
 
+            // Check if verifying dependencies from trace data is enabled.
+            var taskDependencySettings: TaskDependencySettings? = nil
+            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
+                if depSettings.dependencySettings.verification {
+                    taskDependencySettings = depSettings
+
+                    // Remove the trace output file if it already exists.
+                    let traceFile = depSettings.traceFile
+                    if executionDelegate.fs.exists(traceFile) {
+                        try executionDelegate.fs.remove(traceFile)
+                    }
+                }
+            }
+
             var lastResult: CommandResult? = nil
             for command in dependencyInfo.commands {
                 if let casDBs {
@@ -287,7 +301,6 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
 
                 switch lastResult {
                 case .some(.succeeded), .some(.skipped):
-                    // TODO: Verify dependency trace if feature enabled
                     continue
                 default:
                     // Emit the frontend command which failed, unless we have debugging enabled and printed it already
@@ -305,6 +318,25 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
                     return lastResult ?? .failed
                 }
             }
+
+            if let taskDependencySettings, lastResult == .succeeded {
+                // Verify the dependencies from the trace data.
+                let traceFile = taskDependencySettings.traceFile
+                let fs = executionDelegate.fs
+                let traceData = try JSONDecoder().decode(Array<TraceData>.self, from: fs.readMemoryMapped(traceFile))
+
+                var allFiles = Set<Path>()
+                traceData.forEach { allFiles.formUnion(Set($0.includes)) }
+                let verified = try TaskDependencyVerification.verifyFiles(
+                    files: allFiles,
+                    dependencySettings: taskDependencySettings.dependencySettings,
+                    outputDelegate: outputDelegate
+                )
+                if !verified {
+                    return .failed
+                }
+            }
+
             return lastResult ?? .failed
         } catch {
             outputDelegate.emitError("\(error)")
@@ -498,9 +530,9 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
             return .failed
         }
     }
+}
 
-    private struct TraceData: Decodable {
-        let source: Path
-        let includes: [Path]
-    }
+fileprivate struct TraceData: Decodable {
+    let source: Path
+    let includes: [Path]
 }

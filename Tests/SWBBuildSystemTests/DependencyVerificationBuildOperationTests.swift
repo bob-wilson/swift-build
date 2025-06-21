@@ -22,8 +22,8 @@ import SWBProtocol
 @Suite(.requireSDKs(.macOS), .requireLinkerTrace())
 fileprivate struct DependencyVerificationBuildOperationTests: CoreBasedTests {
 
-    @Test
-    func canVerifyDeclaredDependencies() async throws {
+    @Test(arguments: ["NO", "YES"])
+    func canVerifyDeclaredDependencies(_ enableModules: String) async throws {
         try await withTemporaryDirectory { tmpDirPath async throws -> Void in
             let testWorkspace = TestWorkspace(
                 "Test",
@@ -41,7 +41,7 @@ fileprivate struct DependencyVerificationBuildOperationTests: CoreBasedTests {
                                 "Debug",
                                 buildSettings: [
                                     "PRODUCT_NAME": "$(TARGET_NAME)",
-                                    "CLANG_ENABLE_MODULES": "NO",
+                                    "CLANG_ENABLE_MODULES": enableModules,
                                     "GENERATE_INFOPLIST_FILE": "YES",
                                     "DEPENDENCIES": "Foundation",
                                     // Disable the SetOwnerAndGroup action by setting them to empty values.
