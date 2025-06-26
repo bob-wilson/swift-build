@@ -121,6 +121,9 @@ public class TaskProducerContext: StaleFileRemovalContext, BuildFileResolution
     /// Whether a task planned by this producer has requested frontend command line emission.
     var emitFrontendCommandLines: Bool
 
+    public let moduleDependenciesContext: ModuleDependenciesContext?
+    public let linkDependenciesContext: LinkDependenciesContext?
+
     private struct State: Sendable {
         fileprivate var onDemandResourcesAssetPacks: [ODRTagSet: ODRAssetPackInfo] = [:]
         fileprivate var onDemandResourcesAssetPackSubPaths: [String: Set<String>] = [:]
@@ -432,6 +435,50 @@ public class TaskProducerContext: StaleFileRemovalContext, BuildFileResolution
         }
         for note in settings.notes {
             delegate.note(context, note)
+        }
+
+        let validateModuleDependencies = settings.globalScope.evaluate(BuiltinMacros.VALIDATE_MODULE_DEPENDENCIES)
+        if let configuredTarget, validateModuleDependencies != .no {
+            do {
+                let targetXcconfigPath = settings.constructionComponents.targetXcconfigPath
+                let projectXcconfigPath = settings.constructionComponents.projectXcconfigPath
+
+                let thisTargetCondition = MacroCondition(parameter: BuiltinMacros.targetNameCondition, valuePattern: configuredTarget.target.name)
+
+                let fixItContext: FixItContext?
+                if let assignment = settings.globalScope.table.lookupMacro(BuiltinMacros.MODULE_DEPENDENCIES),
+                   let appendingAssignment = (assignment.sequence.first { $0.conditions?.conditions == [thisTargetCondition] }
+                                              ?? assignment.sequence.first { $0.conditions?.conditions.isEmpty ?? true && $0.location?.path == targetXcconfigPath }),
+                   let location = appendingAssignment.location
+                {
+                    fixItContext = .init(insertionPoint: .init(path: location.path, line: location.endLine, column: location.endColumn), modificationStyle: .appendToExistingAssignment)
+                }
+                else if let targetXcconfigPath {
+                    fixItContext = try .init(insertionPoint: .eof(fs: workspaceContext.fs, path: targetXcconfigPath), modificationStyle: .insertNewAssignment(targetNameCondition: nil))
+                }
+                else if let projectXcconfigPath {
+                    fixItContext = try .init(insertionPoint: .eof(fs: workspaceContext.fs, path: projectXcconfigPath), modificationStyle: .insertNewAssignment(targetNameCondition: configuredTarget.target.name))
+                }
+                else {
+                    fixItContext = nil
+                }
+
+                self.moduleDependenciesContext = .init(validate: validateModuleDependencies, settingsModuleDependencyInfos: settings.moduleDependencies, fixItContext: fixItContext)
+            }
+            catch {
+                delegate.error(context, "ModuleDependenciesContext: \(error)")
+                self.moduleDependenciesContext = nil
+            }
+        }
+        else {
+            self.moduleDependenciesContext = nil
+        }
+
+        let validateLinkDependencies = settings.globalScope.evaluate(BuiltinMacros.VALIDATE_LINK_DEPENDENCIES)
+        if validateLinkDependencies != .no {
+            self.linkDependenciesContext = .init(validate: validateLinkDependencies, settingsModuleDependencyInfos: settings.moduleDependencies)
+        } else {
+            self.linkDependenciesContext = nil
         }
     }
 

@@ -43,7 +43,9 @@ fileprivate struct DependencyVerificationBuildOperationTests: CoreBasedTests {
                                     "PRODUCT_NAME": "$(TARGET_NAME)",
                                     "CLANG_ENABLE_MODULES": enableModules,
                                     "GENERATE_INFOPLIST_FILE": "YES",
-                                    "DEPENDENCIES": "Foundation",
+                                    "MODULE_DEPENDENCIES": "Foundation",
+                                    "VALIDATE_LINK_DEPENDENCIES": "YES_ERROR",
+                                    "VALIDATE_MODULE_DEPENDENCIES": "YES_ERROR",
                                     // Disable the SetOwnerAndGroup action by setting them to empty values.
                                     "INSTALL_GROUP": "",
                                     "INSTALL_OWNER": "",
@@ -90,13 +92,13 @@ fileprivate struct DependencyVerificationBuildOperationTests: CoreBasedTests {
                 }
 
                 // Declaring dependency resolves problem
-                try await tester.checkBuild(parameters: parameters(["DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
+                try await tester.checkBuild(parameters: parameters(["MODULE_DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
                     results.checkNoErrors()
                 }
             }
 
             // Linker complains about undeclared dependency
-            try await tester.checkBuild(parameters: parameters(["OTHER_LDFLAGS": "-framework CoreData", "DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
+            try await tester.checkBuild(parameters: parameters(["OTHER_LDFLAGS": "-framework CoreData", "MODULE_DEPENDENCIES": "Foundation Accelerate"]), runDestination: .macOS, persistent: true) { results in
                 results.checkError(.contains("Undeclared dependencies: \n  CoreData"))
             }
         }

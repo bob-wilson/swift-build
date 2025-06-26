@@ -19,7 +19,7 @@ public struct TaskDependencyVerification {
 
     internal static func verifyFiles(
         files: any Sequence<Path>,
-        dependencySettings: DependencySettings,
+        moduleDependencies: [String],
         outputDelegate: any TaskOutputDelegate
     ) throws -> Bool {
         // Group used files by inferred logical dependency name
@@ -30,7 +30,7 @@ public struct TaskDependencyVerification {
             .mapValues { OrderedSet($0)}
 
         // Remove declared dependencies
-        dependencySettings.dependencies.forEach { used.removeValue(forKey: $0) }
+        moduleDependencies.forEach { used.removeValue(forKey: $0) }
 
         // Remove any where we could not infer the dependency
         let unmapped = used.removeValue(forKey: "") ?? []

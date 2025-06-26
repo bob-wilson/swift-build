@@ -415,7 +415,7 @@ struct ClangModuleVerifierPayload: ClangModuleVerifierPayloadType {
     }
 }
 
-public struct ClangTaskPayload: ClangModuleVerifierPayloadType, DependencyInfoEditableTaskPayload, TaskDependencySettingsPayload, Encodable {
+public struct ClangTaskPayload: ClangModuleVerifierPayloadType, DependencyInfoEditableTaskPayload, Encodable {
     let dependencyInfoEditPayload: DependencyInfoEditPayload?
 
     /// The path to the serialized diagnostic output.  Every clang task must provide this path.
@@ -432,9 +432,10 @@ public struct ClangTaskPayload: ClangModuleVerifierPayloadType, DependencyInfoEd
 
     public let fileNameMapPath: Path?
 
-    public let taskDependencySettings: TaskDependencySettings?
+    public let moduleDependenciesContext: ModuleDependenciesContext?
+    public let traceFile: Path?
 
-    fileprivate init(serializedDiagnosticsPath: Path?, indexingPayload: ClangIndexingPayload?, explicitModulesPayload: ClangExplicitModulesPayload? = nil, outputObjectFilePath: Path? = nil, fileNameMapPath: Path? = nil, developerPathString: String? = nil, taskDependencySettings: TaskDependencySettings? = nil) {
+    fileprivate init(serializedDiagnosticsPath: Path?, indexingPayload: ClangIndexingPayload?, explicitModulesPayload: ClangExplicitModulesPayload? = nil, outputObjectFilePath: Path? = nil, fileNameMapPath: Path? = nil, developerPathString: String? = nil, moduleDependenciesContext: ModuleDependenciesContext? = nil, traceFile: Path? = nil) {
         if let developerPathString, explicitModulesPayload == nil {
             self.dependencyInfoEditPayload = .init(removablePaths: [], removableBasenames: [], developerPath: Path(developerPathString))
         } else {
@@ -445,30 +446,33 @@ public struct ClangTaskPayload: ClangModuleVerifierPayloadType, DependencyInfoEd
         self.explicitModulesPayload = explicitModulesPayload
         self.outputObjectFilePath = outputObjectFilePath
         self.fileNameMapPath = fileNameMapPath
-        self.taskDependencySettings = taskDependencySettings
+        self.moduleDependenciesContext = moduleDependenciesContext
+        self.traceFile = traceFile
     }
 
     public func serialize<T: Serializer>(to serializer: T) {
-        serializer.serializeAggregate(7) {
+        serializer.serializeAggregate(8) {
             serializer.serialize(serializedDiagnosticsPath)
             serializer.serialize(indexingPayload)
             serializer.serialize(explicitModulesPayload)
             serializer.serialize(outputObjectFilePath)
             serializer.serialize(fileNameMapPath)
             serializer.serialize(dependencyInfoEditPayload)
-            serializer.serialize(taskDependencySettings)
+            serializer.serialize(moduleDependenciesContext)
+            serializer.serialize(traceFile)
         }
     }
 
     public init(from deserializer: any Deserializer) throws {
-        try deserializer.beginAggregate(7)
+        try deserializer.beginAggregate(8)
         self.serializedDiagnosticsPath = try deserializer.deserialize()
         self.indexingPayload = try deserializer.deserialize()
         self.explicitModulesPayload = try deserializer.deserialize()
         self.outputObjectFilePath = try deserializer.deserialize()
         self.fileNameMapPath = try deserializer.deserialize()
         self.dependencyInfoEditPayload = try deserializer.deserialize()
-        self.taskDependencySettings = try deserializer.deserialize()
+        self.moduleDependenciesContext = try deserializer.deserialize()
+        self.traceFile = try deserializer.deserialize()
     }
 }
 
@@ -1161,27 +1165,20 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             dependencyData = nil
         }
 
-        let taskDependencySettings: TaskDependencySettings?
-        if clangInfo?.hasFeature("print-headers-direct-per-file") ?? false {
-            let depSettings = TaskDependencySettings(
-                traceFile: Path(outputNode.path.str + ".trace.json"),
-                dependencySettings: DependencySettings(cbc.scope)
-            )
-            if depSettings.dependencySettings.verification {
-                commandLine += [
-                    "-Xclang",
-                    "-header-include-file",
-                    "-Xclang",
-                    depSettings.traceFile.str,
-                    "-Xclang",
-                    "-header-include-filtering=direct-per-file",
-                    "-Xclang",
-                    "-header-include-format=json"
-                ]
-            }
-            taskDependencySettings = depSettings
+        let moduleDependenciesContext = cbc.producer.moduleDependenciesContext
+        let traceFile: Path?
+        if clangInfo?.hasFeature("print-headers-direct-per-file") ?? false,
+            (moduleDependenciesContext?.validate ?? .defaultValue) != .no {
+            let file = Path(outputNode.path.str + ".trace.json")
+            commandLine += [
+                "-Xclang", "-header-include-file",
+                "-Xclang", file.str,
+                "-Xclang", "-header-include-filtering=direct-per-file",
+                "-Xclang", "-header-include-format=json"
+            ]
+            traceFile = file
         } else {
-            taskDependencySettings = nil
+            traceFile = nil
         }
 
         // Add the diagnostics serialization flag.  We currently place the diagnostics file right next to the output object file.
@@ -1295,7 +1292,8 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             outputObjectFilePath: shouldGenerateRemarks ? outputNode.path : nil,
             fileNameMapPath: verifierPayload?.fileNameMapPath,
             developerPathString: recordSystemHeaderDepsOutsideSysroot ? cbc.scope.evaluate(BuiltinMacros.DEVELOPER_DIR).str : nil,
-            taskDependencySettings: taskDependencySettings
+            moduleDependenciesContext: moduleDependenciesContext,
+            traceFile: traceFile
         )
 
         var inputNodes: [any PlannedNode] = inputDeps.map { delegate.createNode($0) }
@@ -1345,8 +1343,8 @@ public class ClangCompilerSpec : CompilerSpec, SpecIdentifierType, GCCCompatible
             extraInputs = []
         }
 
-        if let taskDependencySettings {
-            additionalSignatureData += taskDependencySettings.signatureData()
+        if let moduleDependenciesContext {
+            additionalSignatureData += moduleDependenciesContext.signatureData()
         }
 
         // Finally, create the task.

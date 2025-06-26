@@ -11,79 +11,89 @@
 //===----------------------------------------------------------------------===//
 
 public import SWBUtil
-public import SWBMacro
 
 import Foundation
+import SWBMacro
 
-// Global/target dependency settings
-public struct DependencySettings: Serializable, Sendable, Encodable {
-    public let dependencies: [String]  // lexicographically ordered and uniqued
-    public let verification: Bool
+public struct FixItContext: Sendable, SerializableCodable {
+    public var insertionPoint: InsertionPoint
+    public var modificationStyle: ModificationStyle
 
-    public init(
-        dependencies: any Sequence<String>,
-        verification: Bool
-    ) {
-        self.dependencies = Array(OrderedSet(dependencies).sorted())
-        self.verification = verification
+    public init(insertionPoint: InsertionPoint, modificationStyle: ModificationStyle) {
+        self.insertionPoint = insertionPoint
+        self.modificationStyle = modificationStyle
     }
 
-    public func serialize<T: Serializer>(to serializer: T) {
-        serializer.serializeAggregate(2) {
-            serializer.serialize(dependencies)
-            serializer.serialize(verification)
+    public struct InsertionPoint: Sendable, SerializableCodable {
+        public var path: Path
+        public var line: Int
+        public var column: Int
+
+        public init(path: Path, line: Int, column: Int) {
+            self.path = path
+            self.line = line
+            self.column = column
+        }
+
+        public static func eof(fs: any FSProxy, path: Path) throws -> FixItContext.InsertionPoint {
+            guard let s = try fs.read(path).stringValue else { throw StubError.error("could not decode utf8 from \(path.str)") }
+            let lines = s.components(separatedBy: CharacterSet.newlines)
+            // We always get at least one line
+            let endLine = lines.count - 1
+            let endColumn = lines.last!.count
+            return .init(path: path, line: endLine, column: endColumn)
         }
     }
 
-    public init(from deserializer: any Deserializer) throws {
-        try deserializer.beginAggregate(2)
-        self.dependencies = try deserializer.deserialize()
-        self.verification = try deserializer.deserialize()
-    }
-}
-
-extension DependencySettings {
-    public init(_ scope: MacroEvaluationScope) {
-        let dependencies = scope.evaluate(BuiltinMacros.DEPENDENCIES)
-        self.init(
-            dependencies: dependencies,
-            verification: scope.evaluate(BuiltinMacros.DEPENDENCIES_VERIFICATION)
-                .isEnabled(onNotSet: !dependencies.isEmpty),
-        )
-    }
-}
-
-// Task-specific settings
-public struct TaskDependencySettings: Serializable, Sendable, Encodable {
-
-    public let traceFile: Path
-    public let dependencySettings: DependencySettings
-
-    init(traceFile: Path, dependencySettings: DependencySettings) {
-        assert(!traceFile.isEmpty, "traceFile should never be empty")
-        self.traceFile = traceFile
-        self.dependencySettings = dependencySettings
+    public enum ModificationStyle: Sendable, SerializableCodable {
+        case appendToExistingAssignment
+        case insertNewAssignment(targetNameCondition: String?)
     }
 
-    public func serialize<T: Serializer>(to serializer: T) {
-        serializer.serializeAggregate(2) {
-            serializer.serialize(traceFile)
-            serializer.serialize(dependencySettings)
+    public func makeFixIt(newModules: [Settings.ModuleDependencyInfo]) -> Diagnostic.FixIt {
+        let stringValue = newModules.map { $0.asBuildSettingEntry }.map { $0.contains(" ") ? "\"\($0)\"" : $0 }.sorted().joined(separator: " ")
+        let newText: String
+        switch modificationStyle {
+        case .appendToExistingAssignment:
+            newText = " \(stringValue)"
+        case .insertNewAssignment(let targetNameCondition):
+            let targetCondition = targetNameCondition.map { "[target=\($0)]" } ?? ""
+            newText = "\n\(BuiltinMacros.MODULE_DEPENDENCIES.name)\(targetCondition) = $(inherited) \(stringValue)\n"
         }
-    }
 
-    public init(from deserializer: any Deserializer) throws {
-        try deserializer.beginAggregate(2)
-        self.traceFile = try deserializer.deserialize()
-        self.dependencySettings = try deserializer.deserialize()
+        return Diagnostic.FixIt(sourceRange: Diagnostic.SourceRange(path: insertionPoint.path, startLine: insertionPoint.line, startColumn: insertionPoint.column, endLine: insertionPoint.line, endColumn: insertionPoint.column), newText: newText)
+    }
+}
+
+public struct ModuleDependenciesContext: Sendable, SerializableCodable {
+    public var validate: BooleanWarningLevel
+    public var settingsModuleDependencyInfos: [Settings.ModuleDependencyInfo]
+    public var fixItContext: FixItContext?
+
+    public init(validate: BooleanWarningLevel, settingsModuleDependencyInfos: [Settings.ModuleDependencyInfo], fixItContext: FixItContext? = nil) {
+        self.validate = validate
+        self.settingsModuleDependencyInfos = settingsModuleDependencyInfos
+        self.fixItContext = fixItContext
     }
 
     func signatureData() -> String {
-        return "verify:\(dependencySettings.verification),deps:\(dependencySettings.dependencies.joined(separator: ":"))"
+        let moduleNames = settingsModuleDependencyInfos.map { $0.name }
+        return "validate:\(validate),modules:\(moduleNames.joined(separator: ":"))"
     }
 }
 
-// Protocol for task payloads
-public protocol TaskDependencySettingsPayload {
-    var taskDependencySettings: TaskDependencySettings? { get }
+public struct LinkDependenciesContext: Sendable, SerializableCodable {
+    public var validate: BooleanWarningLevel
+    public var settingsModuleDependencyInfos: [Settings.ModuleDependencyInfo]
+
+    public init(validate: BooleanWarningLevel, settingsModuleDependencyInfos: [Settings.ModuleDependencyInfo]) {
+        self.validate = validate
+        self.settingsModuleDependencyInfos = settingsModuleDependencyInfos
+    }
+
+    func signatureData() -> String {
+        let moduleNames = settingsModuleDependencyInfos.map { $0.name }
+        return "validate:\(validate),modules:\(moduleNames.joined(separator: ":"))"
+    }
+
 }

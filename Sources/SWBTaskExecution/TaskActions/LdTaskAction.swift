@@ -36,21 +36,21 @@ public final class LdTaskAction: TaskAction {
             var env = task.environment.bindingsDictionary
 
             // Check if verifying dependencies from trace data is enabled.
-            var taskDependencySettings: TaskDependencySettings? = nil
+            var traceFile: Path? = nil
             var outerTraceFile: Path? = nil
-            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
-                if depSettings.dependencySettings.verification {
-                    taskDependencySettings = depSettings
-
-                    // Remove the trace output file if it already exists.
-                    let traceFile = depSettings.traceFile
-                    if executionDelegate.fs.exists(traceFile) {
-                        try executionDelegate.fs.remove(traceFile)
-                    }
-
-                    // Check if the trace data needs to be merged to "LD_TRACE_FILE".
-                    outerTraceFile = env.removeValue(forKey: outerTraceFileEnvVar).map(Path.init)
+            var linkDependenciesContext: LinkDependenciesContext? = nil
+            if let payload = task.payload as? LdLinkerTaskPayload {
+                traceFile = payload.traceFile
+                linkDependenciesContext = payload.linkDependenciesContext
+            }
+            if let traceFile {
+                // Remove the trace output file if it already exists.
+                if executionDelegate.fs.exists(traceFile) {
+                    try executionDelegate.fs.remove(traceFile)
                 }
+
+                // Check if the trace data needs to be merged to "LD_TRACE_FILE".
+                outerTraceFile = env.removeValue(forKey: outerTraceFileEnvVar).map(Path.init)
             }
 
             let processDelegate = TaskProcessDelegate(outputDelegate: outputDelegate)
@@ -68,14 +68,13 @@ public final class LdTaskAction: TaskAction {
             }
             let execResult = processDelegate.commandResult ?? .failed
 
-            if let taskDependencySettings, execResult == .succeeded {
+            if let linkDependenciesContext, let traceFile, execResult == .succeeded {
                 // Verify the dependencies from the trace data.
-                let traceFile = taskDependencySettings.traceFile
                 let fs = executionDelegate.fs
                 let traceData: TraceData
                 if let outerTraceFile {
                     // TODO: Is this file appending concurrent-targets safe?
-                    let traceFileContent = try fs.read(taskDependencySettings.traceFile)
+                    let traceFileContent = try fs.read(traceFile)
                     try fs.append(outerTraceFile, contents: traceFileContent)
                     traceData = try JSONDecoder().decode(TraceData.self, from: Data(traceFileContent.bytes))
                 } else {
@@ -83,12 +82,13 @@ public final class LdTaskAction: TaskAction {
                     traceData = try JSONDecoder().decode(TraceData.self, from: fs.readMemoryMapped(traceFile))
                 }
 
+                let moduleDependencies = linkDependenciesContext.settingsModuleDependencyInfos.map { $0.name }
                 let verified = try TaskDependencyVerification.verifyFiles(
                     files: traceData.all().filter { !LdTaskAction.inherentDependencies.contains($0.basename) },
-                    dependencySettings: taskDependencySettings.dependencySettings,
+                    moduleDependencies: moduleDependencies,
                     outputDelegate: outputDelegate
                 )
-                if !verified {
+                if !verified && linkDependenciesContext.validate == .yesError {
                     return .failed
                 }
             }

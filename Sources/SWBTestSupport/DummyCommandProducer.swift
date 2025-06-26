@@ -238,4 +238,12 @@ package struct MockCommandProducer: CommandProducer, Sendable {
     package func lookupPlatformInfo(platform: BuildVersion.Platform) -> (any PlatformInfoProvider)? {
         core.lookupPlatformInfo(platform: platform)
     }
+
+    package var moduleDependenciesContext: SWBCore.ModuleDependenciesContext? {
+        nil
+    }
+
+    package var linkDependenciesContext: SWBCore.LinkDependenciesContext? {
+        nil
+    }
 }

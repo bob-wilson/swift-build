@@ -52,7 +52,7 @@ struct LdLinkerTaskPreviewPayload: Serializable, Encodable {
     }
 }
 
-fileprivate struct LdLinkerTaskPayload: DependencyInfoEditableTaskPayload, TaskDependencySettingsPayload {
+public struct LdLinkerTaskPayload: DependencyInfoEditableTaskPayload {
     /// Path that points to the output linker file.
     let outputPath: Path
 
@@ -68,7 +68,8 @@ fileprivate struct LdLinkerTaskPayload: DependencyInfoEditableTaskPayload, TaskD
     /// Path to the object file emitted during LTO, used for optimization remarks.
     fileprivate let objectPathLTO: Path?
 
-    public let taskDependencySettings: TaskDependencySettings?
+    public let linkDependenciesContext: LinkDependenciesContext?
+    public let traceFile: Path?
 
     init(
         outputPath: Path,
@@ -76,13 +77,16 @@ fileprivate struct LdLinkerTaskPayload: DependencyInfoEditableTaskPayload, TaskD
         previewPayload: LdLinkerTaskPreviewPayload? = nil,
         previewStyle: PreviewStyle? = nil,
         objectPathLTO: Path? = nil,
-        taskDependencySettings: TaskDependencySettings? = nil,
+        linkDependenciesContext: LinkDependenciesContext? = nil,
+        traceFile: Path? = nil,
     ) {
         self.outputPath = outputPath
         self.dependencyInfoEditPayload = dependencyInfoEditPayload
         self.previewPayload = previewPayload
         self.objectPathLTO = objectPathLTO
-        self.taskDependencySettings = taskDependencySettings
+        self.linkDependenciesContext = linkDependenciesContext
+        self.traceFile = traceFile
+
         switch previewStyle {
         case .dynamicReplacement:
             self.previewStyle = .dynamicReplacement
@@ -94,24 +98,26 @@ fileprivate struct LdLinkerTaskPayload: DependencyInfoEditableTaskPayload, TaskD
     }
 
     public func serialize<T: Serializer>(to serializer: T) {
-        serializer.serializeAggregate(6) {
+        serializer.serializeAggregate(7) {
             serializer.serialize(outputPath)
             serializer.serialize(dependencyInfoEditPayload)
             serializer.serialize(previewPayload)
             serializer.serialize(objectPathLTO)
             serializer.serialize(previewStyle)
-            serializer.serialize(taskDependencySettings)
+            serializer.serialize(linkDependenciesContext)
+            serializer.serialize(traceFile)
         }
     }
 
     public init(from deserializer: any Deserializer) throws {
-        try deserializer.beginAggregate(6)
+        try deserializer.beginAggregate(7)
         self.outputPath = try deserializer.deserialize()
         self.dependencyInfoEditPayload = try deserializer.deserialize()
         self.previewPayload = try deserializer.deserialize()
         self.objectPathLTO = try deserializer.deserialize()
         self.previewStyle = try deserializer.deserialize()
-        self.taskDependencySettings = try deserializer.deserialize()
+        self.linkDependenciesContext = try deserializer.deserialize()
+        self.traceFile = try deserializer.deserialize()
     }
 }
 
@@ -690,24 +696,18 @@ public final class LdLinkerSpec : GenericLinkerSpec, SpecIdentifierType, @unchec
             editPayload = nil
         }
 
+        let linkDependenciesContext = cbc.producer.linkDependenciesContext
+        let traceFile: Path?
         let supportsTraceFile = !usesLDClassic && ldOptionContext?.supportsTraceFile() ?? false
-        let taskDependencySettings: TaskDependencySettings? = if supportsTraceFile {
-            TaskDependencySettings(
-                traceFile: cbc.scope.evaluate(BuiltinMacros.LD_TRACE_FILE),
-                dependencySettings: DependencySettings(cbc.scope)
-            )
-        } else {
-            nil
-        }
-
-        if let taskDependencySettings = taskDependencySettings,
-           taskDependencySettings.dependencySettings.verification {
+        if supportsTraceFile && (linkDependenciesContext?.validate ?? .defaultValue) != .no {
+            let file = cbc.scope.evaluate(BuiltinMacros.LD_TRACE_FILE)
             commandLine += [
-                "-Xlinker",
-                "-trace_file",
-                "-Xlinker",
-                taskDependencySettings.traceFile.str,
+                "-Xlinker", "-trace_file",
+                "-Xlinker", file.str,
             ]
+            traceFile = file
+        } else {
+            traceFile = nil
         }
 
         let payload = LdLinkerTaskPayload(
@@ -716,7 +716,8 @@ public final class LdLinkerSpec : GenericLinkerSpec, SpecIdentifierType, @unchec
             previewPayload: previewPayload,
             previewStyle: cbc.scope.previewStyle,
             objectPathLTO: shouldGenerateRemarks ? objectPathLTO : nil,
-            taskDependencySettings: taskDependencySettings,
+            linkDependenciesContext: linkDependenciesContext,
+            traceFile: traceFile
         )
 
         // Add dependencies on any directories in our input search paths for which the build system is creating those directories.
@@ -724,7 +725,7 @@ public final class LdLinkerSpec : GenericLinkerSpec, SpecIdentifierType, @unchec
         let otherInputs = delegate.buildDirectories.sorted().compactMap { path in ldSearchPaths.contains(path.str) ? delegate.createBuildDirectoryNode(absolutePath: path) : nil } + cbc.commandOrderingInputs
 
         // Create the task.
-        delegate.createTask(type: self, dependencyData: dependencyInfo, payload: payload, ruleInfo: defaultRuleInfo(cbc, delegate), additionalSignatureData: taskDependencySettings?.signatureData() ?? "", commandLine: commandLine, environment: environment, workingDirectory: cbc.producer.defaultWorkingDirectory, inputs: inputs + otherInputs, outputs: outputs, action: delegate.taskActionCreationDelegate.createLdTaskAction(), execDescription: resolveExecutionDescription(cbc, delegate), enableSandboxing: enableSandboxing)
+        delegate.createTask(type: self, dependencyData: dependencyInfo, payload: payload, ruleInfo: defaultRuleInfo(cbc, delegate), additionalSignatureData: linkDependenciesContext?.signatureData() ?? "", commandLine: commandLine, environment: environment, workingDirectory: cbc.producer.defaultWorkingDirectory, inputs: inputs + otherInputs, outputs: outputs, action: delegate.taskActionCreationDelegate.createLdTaskAction(), execDescription: resolveExecutionDescription(cbc, delegate), enableSandboxing: enableSandboxing)
     }
 
     public static func addAdditionalDependenciesFromCommandLine(_ cbc: CommandBuildContext, _ commandLine: [String], _ environment: EnvironmentBindings, _ inputs: inout [any PlannedNode], _ outputs: inout [any PlannedNode], _ delegate: any TaskGenerationDelegate) {

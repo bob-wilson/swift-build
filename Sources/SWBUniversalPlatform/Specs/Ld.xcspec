@@ -730,7 +730,7 @@
             {
                 Name = "LD_TRACE_FILE";
                 Type = Path;
-                DefaultValue = "$(OBJECT_FILE_DIR_$(CURRENT_VARIANT))/$(CURRENT_ARCH)/$(PRODUCT_NAME)_trace.json";
+                DefaultValue = "$(OBJECT_FILE_DIR_$(CURRENT_VARIANT))/$(CURRENT_ARCH)/$(PRODUCT_NAME).ld_trace.json";
             },
 
             {

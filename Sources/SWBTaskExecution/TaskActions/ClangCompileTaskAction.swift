@@ -249,16 +249,16 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
             }
 
             // Check if verifying dependencies from trace data is enabled.
-            var taskDependencySettings: TaskDependencySettings? = nil
-            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
-                if depSettings.dependencySettings.verification {
-                    taskDependencySettings = depSettings
-
-                    // Remove the trace output file if it already exists.
-                    let traceFile = depSettings.traceFile
-                    if executionDelegate.fs.exists(traceFile) {
-                        try executionDelegate.fs.remove(traceFile)
-                    }
+            var traceFile: Path? = nil
+            var moduleDependenciesContext: ModuleDependenciesContext? = nil
+            if let payload = task.payload as? ClangTaskPayload {
+                traceFile = payload.traceFile
+                moduleDependenciesContext = payload.moduleDependenciesContext
+            }
+            if let traceFile {
+                // Remove the trace output file if it already exists.
+                if executionDelegate.fs.exists(traceFile) {
+                    try executionDelegate.fs.remove(traceFile)
                 }
             }
 
@@ -319,20 +319,20 @@ public final class ClangCompileTaskAction: TaskAction, BuildValueValidatingTaskA
                 }
             }
 
-            if let taskDependencySettings, lastResult == .succeeded {
+            if let moduleDependenciesContext, let traceFile, lastResult == .succeeded {
                 // Verify the dependencies from the trace data.
-                let traceFile = taskDependencySettings.traceFile
                 let fs = executionDelegate.fs
                 let traceData = try JSONDecoder().decode(Array<TraceData>.self, from: fs.readMemoryMapped(traceFile))
 
                 var allFiles = Set<Path>()
                 traceData.forEach { allFiles.formUnion(Set($0.includes)) }
+                let moduleDependencies = moduleDependenciesContext.settingsModuleDependencyInfos.map { $0.name }
                 let verified = try TaskDependencyVerification.verifyFiles(
                     files: allFiles,
-                    dependencySettings: taskDependencySettings.dependencySettings,
+                    moduleDependencies: moduleDependencies,
                     outputDelegate: outputDelegate
                 )
-                if !verified {
+                if !verified && moduleDependenciesContext.validate == .yesError {
                     return .failed
                 }
             }
@@ -479,16 +479,16 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
     ) async -> CommandResult {
         do {
             // Check if verifying dependencies from trace data is enabled.
-            var taskDependencySettings: TaskDependencySettings? = nil
-            if let depSettings = (task.payload as? (any TaskDependencySettingsPayload))?.taskDependencySettings {
-                if depSettings.dependencySettings.verification {
-                    taskDependencySettings = depSettings
-
-                    // Remove the trace output file if it already exists.
-                    let traceFile = depSettings.traceFile
-                    if executionDelegate.fs.exists(traceFile) {
-                        try executionDelegate.fs.remove(traceFile)
-                    }
+            var traceFile: Path? = nil
+            var moduleDependenciesContext: ModuleDependenciesContext? = nil
+            if let payload = task.payload as? ClangTaskPayload {
+                traceFile = payload.traceFile
+                moduleDependenciesContext = payload.moduleDependenciesContext
+            }
+            if let traceFile {
+                // Remove the trace output file if it already exists.
+                if executionDelegate.fs.exists(traceFile) {
+                    try executionDelegate.fs.remove(traceFile)
                 }
             }
 
@@ -507,20 +507,20 @@ public final class ClangNonModularCompileTaskAction: TaskAction {
             }
             let execResult = processDelegate.commandResult ?? .failed
 
-            if let taskDependencySettings, execResult == .succeeded {
+            if let moduleDependenciesContext, let traceFile, execResult == .succeeded {
                 // Verify the dependencies from the trace data.
-                let traceFile = taskDependencySettings.traceFile
                 let fs = executionDelegate.fs
                 let traceData = try JSONDecoder().decode(Array<TraceData>.self, from: fs.readMemoryMapped(traceFile))
 
                 var allFiles = Set<Path>()
                 traceData.forEach { allFiles.formUnion(Set($0.includes)) }
+                let moduleDependencies = moduleDependenciesContext.settingsModuleDependencyInfos.map { $0.name }
                 let verified = try TaskDependencyVerification.verifyFiles(
                     files: allFiles,
-                    dependencySettings: taskDependencySettings.dependencySettings,
+                    moduleDependencies: moduleDependencies,
                     outputDelegate: outputDelegate
                 )
-                if !verified {
+                if !verified && moduleDependenciesContext.validate == .yesError {
                     return .failed
                 }
             }
