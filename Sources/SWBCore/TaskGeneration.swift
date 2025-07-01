@@ -271,6 +271,7 @@ public protocol CommandProducer: PlatformBuildContext, SpecLookupContext, Refere
     var hostOperatingSystem: OperatingSystem { get }
 
     var moduleDependenciesContext: ModuleDependenciesContext? { get }
+    var linkDependenciesContext: LinkDependenciesContext? { get }
 }
 
 extension CommandProducer {

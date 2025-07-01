@@ -242,4 +242,8 @@ package struct MockCommandProducer: CommandProducer, Sendable {
     package var moduleDependenciesContext: SWBCore.ModuleDependenciesContext? {
         nil
     }
+
+    package var linkDependenciesContext: SWBCore.LinkDependenciesContext? {
+        nil
+    }
 }

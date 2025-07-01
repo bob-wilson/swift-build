@@ -813,6 +813,7 @@ public final class BuiltinMacros {
     public static let LD_RUNPATH_SEARCH_PATHS = BuiltinMacros.declareStringListMacro("LD_RUNPATH_SEARCH_PATHS")
     public static let LD_SDK_IMPORTS_FILE = BuiltinMacros.declarePathMacro("LD_SDK_IMPORTS_FILE")
     public static let LD_WARN_UNUSED_DYLIBS = BuiltinMacros.declareBooleanMacro("LD_WARN_UNUSED_DYLIBS")
+    public static let LD_TRACE_FILE = BuiltinMacros.declarePathMacro("LD_TRACE_FILE")
     public static let _LD_MULTIARCH = BuiltinMacros.declareBooleanMacro("_LD_MULTIARCH")
     public static let _LD_MULTIARCH_PREFIX_MAP = BuiltinMacros.declareStringListMacro("_LD_MULTIARCH_PREFIX_MAP")
     public static let LEX = BuiltinMacros.declarePathMacro("LEX")
@@ -1139,6 +1140,7 @@ public final class BuiltinMacros {
     public static let VALIDATE_PRODUCT = BuiltinMacros.declareBooleanMacro("VALIDATE_PRODUCT")
     public static let VALIDATE_DEPENDENCIES = BuiltinMacros.declareEnumMacro("VALIDATE_DEPENDENCIES") as EnumMacroDeclaration<BooleanWarningLevel>
     public static let VALIDATE_DEVELOPMENT_ASSET_PATHS = BuiltinMacros.declareEnumMacro("VALIDATE_DEVELOPMENT_ASSET_PATHS") as EnumMacroDeclaration<BooleanWarningLevel>
+    public static let VALIDATE_LINK_DEPENDENCIES = BuiltinMacros.declareEnumMacro("VALIDATE_LINK_DEPENDENCIES") as EnumMacroDeclaration<BooleanWarningLevel>
     public static let VALIDATE_MODULE_DEPENDENCIES = BuiltinMacros.declareEnumMacro("VALIDATE_MODULE_DEPENDENCIES") as EnumMacroDeclaration<BooleanWarningLevel>
     public static let VECTOR_SUFFIX = BuiltinMacros.declareStringMacro("VECTOR_SUFFIX")
     public static let VERBOSE_PBXCP = BuiltinMacros.declareBooleanMacro("VERBOSE_PBXCP")
@@ -1886,6 +1888,7 @@ public final class BuiltinMacros {
         LD_RUNPATH_SEARCH_PATHS,
         LD_SDK_IMPORTS_FILE,
         LD_WARN_UNUSED_DYLIBS,
+        LD_TRACE_FILE,
         _LD_MULTIARCH,
         _LD_MULTIARCH_PREFIX_MAP,
         LEGACY_DEVELOPER_DIR,
@@ -2351,6 +2354,7 @@ public final class BuiltinMacros {
         VALIDATE_PRODUCT,
         VALIDATE_DEPENDENCIES,
         VALIDATE_DEVELOPMENT_ASSET_PATHS,
+        VALIDATE_LINK_DEPENDENCIES,
         VALIDATE_MODULE_DEPENDENCIES,
         VALID_ARCHS,
         VECTOR_SUFFIX,
